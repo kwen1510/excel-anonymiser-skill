@@ -1,5 +1,7 @@
 # Excel Anonymiser Skill
 
+Please paste the following into Codex:
+
 ```text
 You are helping me use the Excel Anonymiser Skill from this GitHub repository:
 https://github.com/kwen1510/excel-anonymiser-skill
