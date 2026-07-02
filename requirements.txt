@@ -1,0 +1,4 @@
+openpyxl
+cryptography
+msoffcrypto-tool
+pytest

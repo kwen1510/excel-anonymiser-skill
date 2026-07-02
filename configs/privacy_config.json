@@ -1,0 +1,39 @@
+{
+  "header_row": 1,
+  "anonymise_sheet_names": false,
+  "anonymise_headers": false,
+  "output": {
+    "safe_dir": "safe_for_codex",
+    "private_key_dir": "private_keys",
+    "restored_dir": "restored_outputs"
+  },
+  "key_file": {
+    "format": "xlsx",
+    "encrypt_original_values": false,
+    "secret_key_file": null
+  },
+  "sheets": {
+    "Responses": {
+      "columns": {
+        "Name": {
+          "mode": "uuid",
+          "prefix": "NAME"
+        },
+        "Email": {
+          "mode": "uuid",
+          "prefix": "EMAIL"
+        },
+        "Class": {
+          "mode": "uuid",
+          "prefix": "CLASS"
+        },
+        "Marks": {
+          "mode": "keep"
+        },
+        "Comments": {
+          "mode": "keep"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "key_file": "private_keys/original.privacy_key.xlsx",
+  "secret_key_file": null,
+  "output_file": "restored_outputs/processed.restored.xlsx"
+}

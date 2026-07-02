@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Excel Privacy Handler Config",
+  "type": "object",
+  "required": ["header_row", "output", "key_file", "sheets"],
+  "properties": {
+    "header_row": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "anonymise_sheet_names": {
+      "type": "boolean",
+      "default": false
+    },
+    "anonymise_headers": {
+      "type": "boolean",
+      "default": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["safe_dir", "private_key_dir", "restored_dir"],
+      "properties": {
+        "safe_dir": {"type": "string"},
+        "private_key_dir": {"type": "string"},
+        "restored_dir": {"type": "string"}
+      }
+    },
+    "key_file": {
+      "type": "object",
+      "required": ["format", "encrypt_original_values"],
+      "properties": {
+        "format": {"const": "xlsx"},
+        "encrypt_original_values": {"type": "boolean"},
+        "secret_key_file": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "sheets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["columns"],
+        "properties": {
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["mode"],
+              "properties": {
+                "mode": {
+                  "enum": ["keep", "uuid", "stable_hash", "encrypt", "blank"]
+                },
+                "prefix": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

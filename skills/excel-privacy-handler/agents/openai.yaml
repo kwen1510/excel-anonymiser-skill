@@ -1,0 +1,4 @@
+interface:
+  display_name: "Excel Privacy Handler"
+  short_description: "Create and use a locked local Excel anonymisation handler."
+  default_prompt: "Create or use a locked local-first Excel privacy handler that anonymises workbooks without exposing original cell values."

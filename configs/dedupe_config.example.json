@@ -1,0 +1,6 @@
+{
+  "sheet": "Responses",
+  "by": ["Name", "Class", "QuestionID"],
+  "keep": "first",
+  "output_file": "safe_for_codex/processed.deduped.xlsx"
+}
