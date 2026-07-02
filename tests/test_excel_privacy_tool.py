@@ -191,6 +191,59 @@ def test_restore_recreates_synthetic_original_values(isolated_project):
     assert ws["C3"].value == "Class B"
 
 
+def test_simple_mask_and_unmask_with_encrypted_csv_key(isolated_project):
+    project = isolated_project
+    source = project / "original_data" / "original.xlsx"
+    create_workbook(source)
+    approve(project)
+
+    result = run_tool(
+        project,
+        "mask",
+        "original_data/original.xlsx",
+        "--columns",
+        "Name,Email,Class",
+        "--sheet",
+        "Responses",
+    )
+    assert_no_sensitive_output(result)
+    masked = project / "safe_for_codex" / "original.masked.xlsx"
+    key = project / "private_keys" / "original.mask_key.csv"
+    secret = project / "private_keys" / "original.mask_secret.key"
+    assert masked.exists()
+    assert key.exists()
+    assert secret.exists()
+
+    masked_wb = load_workbook(masked)
+    masked_ws = masked_wb["Responses"]
+    assert masked_ws["A2"].value.startswith("MASK_")
+    assert masked_ws["A2"].value == masked_ws["A4"].value
+    assert masked_ws["A2"].value != masked_ws["A3"].value
+
+    key_text = key.read_text(encoding="utf-8")
+    for value in SENSITIVE:
+        assert value not in key_text
+
+    result = run_tool(
+        project,
+        "unmask",
+        "safe_for_codex/original.masked.xlsx",
+        "--key-file",
+        "private_keys/original.mask_key.csv",
+        "--secret-key-file",
+        "private_keys/original.mask_secret.key",
+        "--output",
+        "restored_outputs/original.unmasked.xlsx",
+    )
+    assert_no_sensitive_output(result)
+    restored = load_workbook(project / "restored_outputs" / "original.unmasked.xlsx")
+    ws = restored["Responses"]
+    assert ws["A2"].value == "Alice Example"
+    assert ws["A3"].value == "Bob Example"
+    assert ws["B2"].value == "alice@example.test"
+    assert ws["C3"].value == "Class B"
+
+
 def test_dedupe_removes_duplicate_rows(isolated_project):
     project = isolated_project
     source = project / "safe_for_codex" / "processed.xlsx"

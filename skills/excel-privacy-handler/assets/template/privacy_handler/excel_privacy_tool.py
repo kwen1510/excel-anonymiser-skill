@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import datetime as dt
 import getpass
 import hashlib
@@ -497,6 +498,165 @@ def cmd_anonymise(args: argparse.Namespace) -> None:
                 print(f"- {sheet_name} / {header}: {len(mappings[(sheet_name, header)])} unique values")
 
 
+def parse_columns(columns: str | None) -> list[str]:
+    if not columns:
+        raise PrivacyToolError("Pass columns to mask with --columns, for example: --columns Name,Email,Class")
+    parsed = [column.strip() for column in columns.split(",") if column.strip()]
+    if not parsed:
+        raise PrivacyToolError("No mask columns were provided")
+    return parsed
+
+
+def simple_output_paths(input_path: Path, output: str | None, key_file: str | None, secret_key_file: str | None) -> tuple[Path, Path, Path]:
+    masked_path = resolve_path(output) if output else resolve_path("safe_for_codex") / f"{input_path.stem}.masked.xlsx"
+    key_path = resolve_path(key_file) if key_file else resolve_path("private_keys") / f"{input_path.stem}.mask_key.csv"
+    secret_path = (
+        resolve_path(secret_key_file)
+        if secret_key_file
+        else resolve_path("private_keys") / f"{input_path.stem}.mask_secret.key"
+    )
+    if is_within(key_path, resolve_path("safe_for_codex")):
+        raise PrivacyToolError("Mask key CSV must not be written to safe_for_codex")
+    if is_within(secret_path, resolve_path("safe_for_codex")):
+        raise PrivacyToolError("Mask secret key must not be written to safe_for_codex")
+    if is_within(masked_path, resolve_path("private_keys")):
+        raise PrivacyToolError("Masked workbook must not be written to private_keys")
+    check_not_overwrite_source(masked_path, input_path)
+    return masked_path, key_path, secret_path
+
+
+def write_simple_key_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "sheet_name",
+                "column_header",
+                "masked_value",
+                "encrypted_original_value",
+                "created_at",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def read_simple_key_csv(path: Path, fernet: Any) -> dict[tuple[str, str], dict[str, str]]:
+    # PRIVACY-SENSITIVE:
+    # This function reads private mask mappings locally.
+    # Do not print, log, return to CLI output, or expose original values.
+    mappings: dict[tuple[str, str], dict[str, str]] = {}
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"sheet_name", "column_header", "masked_value", "encrypted_original_value"}
+        if not required.issubset(set(reader.fieldnames or [])):
+            raise PrivacyToolError("Invalid mask key CSV")
+        for row in reader:
+            sheet_name = row["sheet_name"]
+            column_header = row["column_header"]
+            masked_value = row["masked_value"]
+            original = decrypt_value(fernet, row["encrypted_original_value"])
+            mappings.setdefault((sheet_name, column_header), {})[masked_value] = original
+    return mappings
+
+
+def cmd_mask(args: argparse.Namespace) -> None:
+    verify_self_before_sensitive()
+    input_path = resolve_path(args.input)
+    columns = parse_columns(args.columns)
+    masked_path, key_path, secret_path = simple_output_paths(input_path, args.output, args.key_file, args.secret_key_file)
+    fernet_cls = require_fernet()
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret = fernet_cls.generate_key()
+    secret_path.write_bytes(secret)
+    fernet = fernet_cls(secret)
+
+    wb = load_workbook_private(input_path)
+    target_sheets = [args.sheet] if args.sheet else wb.sheetnames
+    key_rows: list[dict[str, Any]] = []
+    summary: list[tuple[str, str, int]] = []
+
+    for sheet_name in target_sheets:
+        if sheet_name not in wb.sheetnames:
+            raise PrivacyToolError(f"Sheet not found: {sheet_name}")
+        ws = wb[sheet_name]
+        headers = get_headers(ws, args.header_row)
+        missing = [column for column in columns if column not in headers]
+        if missing:
+            raise PrivacyToolError(f"Missing mask column in sheet {sheet_name}: {missing[0]}")
+        for column_header in columns:
+            column_index = headers[column_header]
+            replacements: dict[Any, str] = {}
+            for row_index in range(args.header_row + 1, ws.max_row + 1):
+                cell = ws.cell(row=row_index, column=column_index)
+                original = cell.value
+                if original is None or original == "":
+                    continue
+                if original not in replacements:
+                    replacements[original] = f"MASK_{uuid.uuid4().hex[:12]}"
+                cell.value = replacements[original]
+            for original, masked_value in replacements.items():
+                key_rows.append(
+                    {
+                        "sheet_name": sheet_name,
+                        "column_header": column_header,
+                        "masked_value": masked_value,
+                        "encrypted_original_value": encrypt_value(fernet, original),
+                        "created_at": now_iso(),
+                    }
+                )
+            summary.append((sheet_name, column_header, len(replacements)))
+
+    masked_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(masked_path)
+    write_simple_key_csv(key_path, key_rows)
+    print(f"Created masked workbook: {relative_display(masked_path)}")
+    print(f"Created private mask key CSV: {relative_display(key_path)}")
+    print(f"Created private secret key: {relative_display(secret_path)}")
+    print("Masked columns:")
+    for sheet_name, column_header, count in summary:
+        print(f"- {sheet_name} / {column_header}: {count} unique values")
+
+
+def cmd_unmask(args: argparse.Namespace) -> None:
+    verify_self_before_sensitive()
+    input_path = resolve_path(args.input)
+    output_path = resolve_path(args.output) if args.output else resolve_path("restored_outputs") / f"{input_path.stem}.unmasked.xlsx"
+    key_path = resolve_path(args.key_file)
+    secret_path = resolve_path(args.secret_key_file)
+    if is_within(output_path, resolve_path("safe_for_codex")):
+        raise PrivacyToolError("Unmasked output must not be written to safe_for_codex")
+    check_not_overwrite_source(output_path, input_path)
+    fernet = load_secret_key(secret_path)
+    mappings = read_simple_key_csv(key_path, fernet)
+    wb = load_workbook_private(input_path)
+    summary: list[tuple[str, str, int]] = []
+
+    for (sheet_name, column_header), replacements in mappings.items():
+        if sheet_name not in wb.sheetnames:
+            continue
+        ws = wb[sheet_name]
+        headers = get_headers(ws, args.header_row)
+        if column_header not in headers:
+            continue
+        column_index = headers[column_header]
+        count = 0
+        for row_index in range(args.header_row + 1, ws.max_row + 1):
+            cell = ws.cell(row=row_index, column=column_index)
+            if cell.value in replacements:
+                cell.value = replacements[cell.value]
+                count += 1
+        summary.append((sheet_name, column_header, count))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(output_path)
+    print(f"Created unmasked workbook: {relative_display(output_path)}")
+    print("Unmasked columns:")
+    for sheet_name, column_header, count in summary:
+        print(f"- {sheet_name} / {column_header}: {count} replacements")
+
+
 def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -734,6 +894,24 @@ def build_parser() -> argparse.ArgumentParser:
     anonymise_p.add_argument("input")
     anonymise_p.add_argument("--config", required=True)
     anonymise_p.set_defaults(func=cmd_anonymise)
+
+    mask_p = sub.add_parser("mask")
+    mask_p.add_argument("input")
+    mask_p.add_argument("--columns", required=True, help="Comma-separated headers to mask, e.g. Name,Email,Class")
+    mask_p.add_argument("--sheet", help="Optional single sheet name. Defaults to all sheets.")
+    mask_p.add_argument("--header-row", type=int, default=1)
+    mask_p.add_argument("--output")
+    mask_p.add_argument("--key-file")
+    mask_p.add_argument("--secret-key-file")
+    mask_p.set_defaults(func=cmd_mask)
+
+    unmask_p = sub.add_parser("unmask")
+    unmask_p.add_argument("input")
+    unmask_p.add_argument("--key-file", required=True)
+    unmask_p.add_argument("--secret-key-file", required=True)
+    unmask_p.add_argument("--header-row", type=int, default=1)
+    unmask_p.add_argument("--output")
+    unmask_p.set_defaults(func=cmd_unmask)
 
     dedupe_p = sub.add_parser("dedupe")
     dedupe_p.add_argument("input")

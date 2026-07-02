@@ -7,9 +7,13 @@ private_keys/*
 restored_outputs/*
 !restored_outputs/.gitkeep
 *.privacy_key.xlsx
+*.mask_key.csv
 *.secret.key
+*.mask_secret.key
 *.anonymised.xlsx
+*.masked.xlsx
 *.restored.xlsx
+*.unmasked.xlsx
 __pycache__/
 .pytest_cache/
 .env

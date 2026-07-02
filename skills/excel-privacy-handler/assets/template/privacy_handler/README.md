@@ -31,22 +31,19 @@ Password-protected workbook support requires `msoffcrypto-tool`.
 
 ```bash
 python privacy_handler/excel_privacy_tool.py inspect original_data/original.xlsx --header-row 1
-python privacy_handler/excel_privacy_tool.py validate-config configs/privacy_config.json
-python privacy_handler/excel_privacy_tool.py anonymise original_data/original.xlsx --config configs/privacy_config.json
+python privacy_handler/excel_privacy_tool.py mask original_data/original.xlsx --sheet Responses --columns Name,Email,Class
 ```
 
 Then Codex works only on:
 
 ```text
-safe_for_codex/original.anonymised.xlsx
-safe_for_codex/original.privacy_manifest.json
+safe_for_codex/original.masked.xlsx
 ```
 
 After processing:
 
 ```bash
-python privacy_handler/excel_privacy_tool.py dedupe safe_for_codex/processed.xlsx --config configs/dedupe_config.example.json
-python privacy_handler/excel_privacy_tool.py restore safe_for_codex/processed.deduped.xlsx --config configs/restore_config.example.json
+python privacy_handler/excel_privacy_tool.py unmask safe_for_codex/original.masked.xlsx --key-file private_keys/original.mask_key.csv --secret-key-file private_keys/original.mask_secret.key --output restored_outputs/original.unmasked.xlsx
 ```
 
 ## Locking Workflow
@@ -75,6 +72,8 @@ Treat privacy_handler as a locked executable.
 
 ```bash
 python privacy_handler/excel_privacy_tool.py inspect <input.xlsx> [--header-row 1]
+python privacy_handler/excel_privacy_tool.py mask <input.xlsx> --columns <headers> [--sheet <sheet>]
+python privacy_handler/excel_privacy_tool.py unmask <masked.xlsx> --key-file <mask_key.csv> --secret-key-file <mask_secret.key> --output <output.xlsx>
 python privacy_handler/excel_privacy_tool.py anonymise <input.xlsx> --config <config.json>
 python privacy_handler/excel_privacy_tool.py dedupe <input.xlsx> --config <config.json>
 python privacy_handler/excel_privacy_tool.py restore <input.xlsx> --config <config.json>

@@ -1,5 +1,9 @@
 # Excel Anonymiser Skill
 
+```text
+Use this GitHub repository as a Codex skill and local Excel privacy tool: https://github.com/kwen1510/excel-anonymiser-skill. Clone it into the current project folder, install the requirements, run the tests and verify-self check, then help me inspect an Excel workbook safely. First run the inspect command to list only sheet names, headers, row counts, and column counts. Then ask me which columns I want to mask. After I answer, run the mask command to create a masked workbook in safe_for_codex/ plus a private encrypted CSV key and secret key in private_keys/. Work only on files in safe_for_codex/. Never read, print, summarize, preview, or inspect original cell values, private key CSV contents, secret keys, restored outputs, or workbook passwords. If the workbook is password protected, let the local popup ask me for the password; do not ask me to paste it into chat, config, or terminal commands. When I ask to unmask, run the unmask command with the private key files and write the result to restored_outputs/.
+```
+
 ## Install
 
 Clone the repository:
@@ -29,116 +33,120 @@ Optional: install the bundled handler template into another project:
 python3 skills/excel-privacy-handler/scripts/install_template.py --target /path/to/project
 ```
 
-Use `--force` only when intentionally replacing an existing scaffold:
-
-```bash
-python3 skills/excel-privacy-handler/scripts/install_template.py --target /path/to/project --force
-```
-
 ## What This Is
 
-This repository contains two pieces:
+This is a deliberately simple local Excel masking tool for Codex workflows.
 
-- A locked local Excel privacy handler in `privacy_handler/`.
-- A reusable Codex skill package in `skills/excel-privacy-handler/`.
+The idea is:
 
-The handler lets Codex help with Excel workflows without reading the real workbook values. It does this by creating a safe anonymised workbook for Codex and a separate private key file that only the local user should control.
+1. Codex can inspect the workbook structure safely.
+2. The user chooses which columns to mask.
+3. The tool replaces those values with random gibberish IDs.
+4. The tool writes a private encrypted CSV key that can map the gibberish IDs back later.
+5. Codex works only on the masked workbook.
+6. The user can unmask the workbook at the end.
 
 ## How It Works
 
-1. Put the real workbook in `original_data/`.
-2. Run `inspect`. This reads only workbook structure and the configured header row, then prints safe metadata: filename, sheet names, row counts, column counts, and headers.
-3. Edit `configs/privacy_config.json`. The config names sheets, column headers, anonymisation modes, and output folders. It must not contain real cell values or passwords.
-4. Run `anonymise`. The handler replaces selected column values with safe IDs such as `NAME_550e8400`, writes an anonymised workbook to `safe_for_codex/`, writes a safe manifest to `safe_for_codex/`, and writes the private mapping key to `private_keys/`.
-5. Codex works only on the anonymised workbook and manifest. It can edit, process, or deduplicate the safe workbook without seeing original values.
-6. Run `restore` locally when finished. The handler uses the private key file to put original values back into a restored workbook under `restored_outputs/`.
+Put the real workbook in `original_data/`.
 
-The important separation is:
-
-- `safe_for_codex/` contains files Codex may inspect.
-- `private_keys/`, `original_data/`, and `restored_outputs/` contain files Codex must not inspect.
-
-## Privacy Boundary
-
-Codex may see:
-- `privacy_handler` source before approval
-- `configs/*.json`
-- inspect output
-- `safe_for_codex/*.anonymised.xlsx`
-- `safe_for_codex/*.privacy_manifest.json`
-
-Codex must not see:
-- `original_data/*.xlsx`
-- `private_keys/*.privacy_key.xlsx`
-- `private_keys/*.secret.key`
-- `restored_outputs/*.xlsx`
-- workbook passwords
-- restored workbook contents
-- sample rows or raw cell values
-
-The handler must never print original cell values, mapping pairs, restored workbook contents, sample rows, unique original values, or frequency counts of original values.
-
-## Basic Workflow
-
-Inspect safe workbook metadata:
+Run `inspect`:
 
 ```bash
 python3 privacy_handler/excel_privacy_tool.py inspect original_data/original.xlsx --header-row 1
 ```
 
-Validate the config:
+This prints only safe metadata:
+
+- workbook filename
+- sheet names
+- headers
+- row counts
+- column counts
+
+It does not print sample rows or cell values.
+
+After seeing the headers, choose the columns to mask. Then run:
 
 ```bash
-python3 privacy_handler/excel_privacy_tool.py validate-config configs/privacy_config.json
+python3 privacy_handler/excel_privacy_tool.py mask original_data/original.xlsx --sheet Responses --columns Name,Email,Class
 ```
 
-Create the anonymised workbook:
+This creates:
 
-```bash
-python3 privacy_handler/excel_privacy_tool.py anonymise original_data/original.xlsx --config configs/privacy_config.json
+```text
+safe_for_codex/original.masked.xlsx
+private_keys/original.mask_key.csv
+private_keys/original.mask_secret.key
 ```
+
+The masked workbook contains random IDs like:
+
+```text
+MASK_8f4a91c2e3b7
+```
+
+These IDs are random and not reversible by themselves. The private CSV key stores the mapping, and the original values inside that CSV are encrypted with the secret key file.
 
 Codex should then work only with:
 
 ```text
-safe_for_codex/original.anonymised.xlsx
-safe_for_codex/original.privacy_manifest.json
+safe_for_codex/original.masked.xlsx
 ```
 
-Deduplicate an anonymised workbook:
+When the work is finished, unmask:
 
 ```bash
-python3 privacy_handler/excel_privacy_tool.py dedupe safe_for_codex/processed.xlsx --config configs/dedupe_config.example.json
+python3 privacy_handler/excel_privacy_tool.py unmask safe_for_codex/original.masked.xlsx --key-file private_keys/original.mask_key.csv --secret-key-file private_keys/original.mask_secret.key --output restored_outputs/original.unmasked.xlsx
 ```
 
-Restore after processing:
-
-```bash
-python3 privacy_handler/excel_privacy_tool.py restore safe_for_codex/processed.deduped.xlsx --config configs/restore_config.example.json
-```
-
-## Anonymisation Modes
-
-The config supports these column modes:
-
-- `keep`: keep the value unchanged in the anonymised workbook.
-- `uuid`: replace each unique value with a random prefixed ID.
-- `stable_hash`: replace each unique value with a salted deterministic hash.
-- `encrypt`: replace each value with an encrypted token.
-- `blank`: remove the value in the anonymised workbook.
-
-For most identifying columns, use `uuid`.
+If rows were deleted or deduplicated while working on the masked workbook, unmasking still works for the remaining masked IDs.
 
 ## Password-Protected Workbooks
 
-If the workbook is password protected, the handler shows a local password popup. Do not paste passwords into Codex chat, terminal commands, config files, or source files.
+If the workbook is not password protected, the commands just run.
 
-Password-protected workbook support uses `msoffcrypto-tool`. The password is held only in memory for local decryption and is not written to logs, configs, manifests, key files, or terminal output.
+If the workbook is password protected, the tool shows a local password popup. The password is held only in memory for local decryption.
+
+Do not paste workbook passwords into:
+
+- Codex chat
+- terminal commands
+- config files
+- source files
+
+## Privacy Boundary
+
+Codex may see:
+
+- inspect output
+- `safe_for_codex/*.masked.xlsx`
+- `safe_for_codex/*.privacy_manifest.json`
+- config files that contain only sheet names, headers, modes, and paths
+
+Codex must not see:
+
+- `original_data/*.xlsx`
+- `private_keys/*.mask_key.csv`
+- `private_keys/*.mask_secret.key`
+- `private_keys/*.privacy_key.xlsx`
+- `restored_outputs/*.xlsx`
+- workbook passwords
+- sample rows or raw cell values
 
 ## Commands
 
+Simple workflow:
+
 ```bash
 python3 privacy_handler/excel_privacy_tool.py inspect <input.xlsx> [--header-row 1]
+python3 privacy_handler/excel_privacy_tool.py mask <input.xlsx> --columns Name,Email [--sheet Responses]
+python3 privacy_handler/excel_privacy_tool.py unmask <masked.xlsx> --key-file <mask_key.csv> --secret-key-file <mask_secret.key> --output <output.xlsx>
+```
+
+Advanced workflow remains available:
+
+```bash
 python3 privacy_handler/excel_privacy_tool.py anonymise <input.xlsx> --config <config.json>
 python3 privacy_handler/excel_privacy_tool.py dedupe <input.xlsx> --config <config.json>
 python3 privacy_handler/excel_privacy_tool.py restore <input.xlsx> --config <config.json>
@@ -167,7 +175,7 @@ The skill contains:
 After approval:
 
 ```text
-Do not edit privacy_handler/*.
+Do not edit privacy_handler/* unless the user explicitly asks to change the tool.
 Do not open original_data/*.
 Do not open private_keys/*.
 Do not open restored_outputs/* unless explicitly allowed.
