@@ -1,7 +1,79 @@
 # Excel Anonymiser Skill
 
 ```text
-Use this GitHub repository as a Codex skill and local Excel privacy tool: https://github.com/kwen1510/excel-anonymiser-skill. Clone it into the current project folder, install the requirements, run the tests and verify-self check, then help me inspect an Excel workbook safely. First run the inspect command to list only sheet names, headers, row counts, and column counts. Then ask me which columns I want to mask. After I answer, run the mask command to create a masked workbook in safe_for_codex/ plus a private encrypted CSV key and secret key in private_keys/. Work only on files in safe_for_codex/. Never read, print, summarize, preview, or inspect original cell values, private key CSV contents, secret keys, restored outputs, or workbook passwords. If the workbook is password protected, let the local popup ask me for the password; do not ask me to paste it into chat, config, or terminal commands. When I ask to unmask, run the unmask command with the private key files and write the result to restored_outputs/.
+You are helping me use the Excel Anonymiser Skill from this GitHub repository:
+https://github.com/kwen1510/excel-anonymiser-skill
+
+Goal:
+Set up a local Excel privacy workflow where you can help me work with Excel files without ever reading the original cell values.
+
+Do this step by step:
+
+1. Clone or use the repository in the current project folder.
+   If it is not already present, run:
+   git clone https://github.com/kwen1510/excel-anonymiser-skill.git
+
+2. Enter the repository folder and install requirements:
+   python3 -m pip install -r requirements.txt
+
+3. Verify the tool:
+   python3 -m pytest
+   python3 privacy_handler/excel_privacy_tool.py verify-self
+
+4. Tell me to put my real Excel workbook inside:
+   original_data/
+
+5. Once the workbook is there, inspect it safely with:
+   python3 privacy_handler/excel_privacy_tool.py inspect original_data/<file.xlsx> --header-row 1
+
+Important:
+The inspect command may show only:
+- workbook filename
+- sheet names
+- headers
+- row counts
+- column counts
+
+It must not show sample rows or original cell values.
+
+6. After inspect, show me the sheet names and headers from the safe output, then ask:
+   "Which columns do you want to mask?"
+
+7. After I choose the columns, run the simple mask command:
+   python3 privacy_handler/excel_privacy_tool.py mask original_data/<file.xlsx> --sheet <sheet_name> --columns Column1,Column2,Column3
+
+This creates:
+- safe_for_codex/<file>.masked.xlsx
+- private_keys/<file>.mask_key.csv
+- private_keys/<file>.mask_secret.key
+
+The masked workbook contains random gibberish IDs such as MASK_8f4a91c2e3b7. These are not reversible by themselves. The private CSV key plus secret key are needed to unmask later.
+
+8. From this point onward, work only with:
+   safe_for_codex/<file>.masked.xlsx
+
+Never open or inspect:
+- original_data/*.xlsx
+- private_keys/*.mask_key.csv
+- private_keys/*.mask_secret.key
+- restored_outputs/*.xlsx
+
+Never read, print, summarize, preview, log, or infer:
+- original cell values
+- private mapping key contents
+- restored workbook contents
+- workbook passwords
+- sample rows
+- unique original values
+- frequency counts of original values
+
+9. If the workbook is password protected, let the local popup ask me for the password.
+Do not ask me to paste the password into Codex chat, terminal commands, config files, or source files.
+
+10. When I ask to unmask, run:
+    python3 privacy_handler/excel_privacy_tool.py unmask safe_for_codex/<file>.masked.xlsx --key-file private_keys/<file>.mask_key.csv --secret-key-file private_keys/<file>.mask_secret.key --output restored_outputs/<file>.unmasked.xlsx
+
+At the end, tell me where the masked workbook is, where the private key files are, and how to run unmask. Keep the workflow simple.
 ```
 
 ## Install
